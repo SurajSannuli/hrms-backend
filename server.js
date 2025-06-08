@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
+const { getDashboardData , postEmployeeData } = require('./db/queries');
 
 const app = express();
 
@@ -48,30 +49,39 @@ async function initializeDatabase() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS employees (
+        id SERIAL PRIMARY KEY,
+        employee_id VARCHAR(100) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        mail VARCHAR(100) NOT NULL,
+        department VARCHAR(100) NOT NULL,
+        designation VARCHAR(100) NOT NULL,
+        basic_salary DECIMAL(10, 2) NOT NULL,
+        allowance DECIMAL(10, 2) NOT NULL,
+        total_salary DECIMAL(10, 2) NOT NULL,
+        gender VARCHAR(20) NOT NULL,
+        dob DATE NOT NULL,
+        joining_date DATE NOT NULL,
+        ess_password TEXT NOT NULL,
+        active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`);
     
     await client.query(`
-      CREATE TABLE IF NOT EXISTS departments (
+      CREATE TABLE IF NOT EXISTS leave_requests (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255) UNIQUE NOT NULL,
+        employee_id VARCHAR(100) NOT NULL,
+        leave_type VARCHAR(20) NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        leave_days INTEGER NOT NULL,
+        reason TEXT,
+        status VARCHAR(20) DEFAULT 'pending',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`);
-      
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS designations (
-        id SERIAL PRIMARY KEY,
-        department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
-        name VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(department_id, name)
-      )`);
-      
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS leave_types (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) UNIQUE NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      )`);
-    
+
     await client.query('COMMIT');
     console.log('Database tables initialized successfully');
   } catch (err) {
@@ -83,126 +93,29 @@ async function initializeDatabase() {
   }
 }
 
-// Departments API
-app.get('/api/departments', async (req, res) => {
+app.get('/api/dashboard', async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      'SELECT id, name FROM departments ORDER BY name'
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch departments' });
+    const data = await getDashboardData();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
   }
 });
 
-app.post('/api/departments', 
-  body('name').trim().isLength({ min: 2, max: 255 }),
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
 
-    const { name } = req.body;
-    try {
-      const { rows } = await pool.query(
-        'INSERT INTO departments (name) VALUES ($1) RETURNING id, name',
-        [name]
-      );
-      res.status(201).json(rows[0]);
-    } catch (err) {
-      if (err.code === '23505') {
-        return res.status(409).json({ error: 'Department already exists' });
-      }
-      console.error(err);
-      res.status(500).json({ error: 'Failed to create department' });
-    }
-  }
-);
-
-// Designations API
-app.get('/api/designations/:departmentId', async (req, res) => {
+app.post('/api/employees', async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT id, name FROM designations 
-       WHERE department_id = $1 ORDER BY name`,
-      [req.params.departmentId]
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch designations' });
+    const data = await postEmployeeData(req.body);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to Post Employee data' });
   }
 });
 
-app.post('/api/designations',
-  body('department_id').isInt(),
-  body('name').trim().isLength({ min: 2, max: 255 }),
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
 
-    const { department_id, name } = req.body;
-    try {
-      const { rows } = await pool.query(
-        `INSERT INTO designations (department_id, name) 
-         VALUES ($1, $2) RETURNING id, name`,
-        [department_id, name]
-      );
-      res.status(201).json(rows[0]);
-    } catch (err) {
-      if (err.code === '23503') {
-        return res.status(404).json({ error: 'Department not found' });
-      }
-      if (err.code === '23505') {
-        return res.status(409).json({ error: 'Designation already exists for this department' });
-      }
-      console.error(err);
-      res.status(500).json({ error: 'Failed to create designation' });
-    }
-  }
-);
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// Leave Types API
-app.get('/api/leave-types', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT id, name FROM leave_types ORDER BY name'
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch leave types' });
-  }
-});
-
-app.post('/api/leave-types',
-  body('name').trim().isLength({ min: 2, max: 255 }),
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { name } = req.body;
-    try {
-      const { rows } = await pool.query(
-        'INSERT INTO leave_types (name) VALUES ($1) RETURNING id, name',
-        [name]
-      );
-      res.status(201).json(rows[0]);
-    } catch (err) {
-      if (err.code === '23505') {
-        return res.status(409).json({ error: 'Leave type already exists' });
-      }
-      console.error(err);
-      res.status(500).json({ error: 'Failed to create leave type' });
-    }
-  }
-);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

@@ -1,25 +1,17 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 
 // Create a connection pool
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'hr_master',
-  password: 'Mi*998909',
-  port: 5432,
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: parseInt(process.env.DB_PORT), // ensure port is a number
 });
 
-// Query example
-async function getUsers() {
-  try {
-    const res = await pool.query('SELECT * FROM users');
-    console.log(res.rows);
-    return res.rows;
-  } catch (err) {
-    console.error('Error executing query', err);
-    throw err;
-  }
-}
-
-// Don't forget to close the pool when your app shuts down
+// Gracefully close pool on shutdown
 process.on('exit', () => pool.end());
+
+// ✅ Export the pool
+module.exports = pool;
