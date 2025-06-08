@@ -5,7 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
-const { getDashboardData , postEmployeeData } = require('./db/queries');
+const { getDashboardData , postEmployeeData, handleLogin, handleApplyLeave, getEmployees } = require('./db/queries');
 
 const app = express();
 
@@ -70,15 +70,16 @@ async function initializeDatabase() {
     )`);
     
     await client.query(`
-      CREATE TABLE IF NOT EXISTS leave_requests (
+      CREATE TABLE IF NOT EXISTS leaves (
         id SERIAL PRIMARY KEY,
         employee_id VARCHAR(100) NOT NULL,
+        employee_name VARCHAR(100) NOT NULL,
         leave_type VARCHAR(20) NOT NULL,
         start_date DATE NOT NULL,
         end_date DATE NOT NULL,
-        leave_days INTEGER NOT NULL,
         reason TEXT,
-        status VARCHAR(20) DEFAULT 'pending',
+        leave_days INTEGER NOT NULL,
+        leave_status VARCHAR(20) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`);
 
@@ -92,6 +93,8 @@ async function initializeDatabase() {
     client.release();
   }
 }
+
+// API Handling
 
 app.get('/api/dashboard', async (req, res) => {
   try {
@@ -112,6 +115,34 @@ app.post('/api/employees', async (req, res) => {
   }
 });
 
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const data = await handleLogin(req.body);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to Login Something Went Wrong' });
+  }
+});
+
+
+app.post('/api/applyleave', async (req, res) => {
+  try {
+    const data = await handleApplyLeave(req.body);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to Apply Leave Something Went Wrong' });
+  }
+});
+
+app.get('/api/get-employees', async (req, res) => {
+  try {
+    const data = await getEmployees();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to Get Employees Something Went Wrong' });
+  }
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -107,4 +107,74 @@ const postEmployeeData = async (employee) => {
   }
 };
 
-module.exports = { getDashboardData, postEmployeeData };
+const handleLogin = async (req) => {
+  
+  const { identifier, password } = req
+
+  if (!identifier || !password) {
+    return { success: false, message: 'Identifier and password required' };
+  }
+
+  try {
+    const query = `
+      SELECT ess_password FROM employees 
+      WHERE mail = $1 OR employee_id = $1
+    `;
+    const result = await pool.query(query, [identifier]);
+
+    if (result.rows.length === 0) {
+      return res.json({ success: false, message: 'Invalid credentials' });
+    }
+
+   if (result.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    const storedPassword = result.rows[0].ess_password;
+
+    // Plain text comparison (no hashing)
+    if (password !== storedPassword) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    return { success: true, message: "Logged In Success" }
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  };
+}
+
+const handleApplyLeave = async (req) => {
+  const { employee_id, employee_name, leaveType, start_date, end_date, reason, leave_days, leave_status } = req;
+  try {
+    const result = await pool.query(
+      `INSERT INTO leaves 
+        (employee_id, employee_name, leave_type, start_date, end_date, reason, leave_days, leave_status) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+        RETURNING *`,
+      [employee_id, employee_name, leaveType, start_date, end_date, reason, leave_days, leave_status]
+    );
+    return { success: true, leave: result.rows[0] };
+  } catch (err) {
+    console.error('Error applying leave:', err);
+    return { success: false, message: 'Server error' };
+  };
+};
+
+
+
+const getEmployees = async() => {
+  try {
+    const result = await pool.query('SELECT employee_id, name FROM employees');
+    return result.rows;
+  } catch (error) {
+    console.error('Error fetching employees:', error);
+    return { status: 500 , message: 'Internal Server Error' };
+  }
+};
+
+
+
+
+module.exports = { getDashboardData, postEmployeeData, handleLogin, handleApplyLeave, getEmployees };
