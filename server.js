@@ -18,6 +18,9 @@ const {
   getEmployee,
   updateEmployeeData,
   getPayroll,
+  getEssDashboard,
+  getEmployeeLeaves,
+  adminAuth,
 } = require("./db/queries");
 
 const app = express();
@@ -34,7 +37,7 @@ app.use(express.json({ limit: "10kb" }));
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000, // limit each IP to 100 requests per windowMs
 });
 app.use("/api", limiter);
 
@@ -98,6 +101,14 @@ async function initializeDatabase() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS admin_auth (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(100) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL
+      );
+    `);
+
     await client.query("COMMIT");
     console.log("Database tables initialized successfully");
   } catch (err) {
@@ -141,6 +152,15 @@ app.post("/api/employees", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   try {
     const data = await handleLogin(req.body);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to Login Something Went Wrong" });
+  }
+});
+
+app.post("/api/admin-login", async (req, res) => {
+  try {
+    const data = await adminAuth(req);
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: "Failed to Login Something Went Wrong" });
@@ -230,6 +250,24 @@ app.get("/api/payroll", async (req, res) => {
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: "Failed to Payroll dashboard data" });
+  }
+});
+
+app.get("/api/ess-dashboard/:employee_id", async (req, res) => {
+  try {
+    const data = await getEssDashboard(req);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch Ess Dashboard data" });
+  }
+});
+
+app.get("/api/get-ess-leave/:employee_id", async (req, res) => {
+  try {
+    const data = await getEmployeeLeaves(req);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to get Ess leave data" });
   }
 });
 

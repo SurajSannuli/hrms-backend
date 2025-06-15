@@ -12,7 +12,7 @@ const getDashboardData = async () => {
     const onLeaveRes = await client.query(
       `SELECT COUNT(*) FROM leaves 
        WHERE $1 BETWEEN start_date AND end_date 
-       AND leave_status = 'approved'`,
+       AND leave_status = 'APPROVED'`,
       [new Date().toISOString().split("T")[0]]
     );
 
@@ -47,6 +47,43 @@ const getDashboardData = async () => {
     };
   } finally {
     client.release();
+  }
+};
+
+const getEssDashboard = async (req) => {
+  const { employee_id } = req.params;
+
+  const query = `
+    SELECT 
+      e.employee_id,
+      e.name,
+      e.designation,
+      e.department,
+      e.joining_date,
+      e.total_salary,
+
+      COALESCE(SUM(CASE WHEN l.leave_status = 'APPROVED' THEN l.leave_days ELSE 0 END), 0) AS approved_leaves,
+      COALESCE(SUM(CASE WHEN l.leave_status = 'PENDING' THEN l.leave_days ELSE 0 END), 0) AS pending_leaves,
+      COALESCE(SUM(CASE WHEN l.leave_status = 'REJECTED' THEN l.leave_days ELSE 0 END), 0) AS rejected_leaves
+
+    FROM employees e
+    LEFT JOIN leaves l ON l.employee_id = e.employee_id
+    WHERE e.employee_id = $1
+    GROUP BY 
+      e.employee_id, e.name, e.designation, e.department, e.joining_date,
+      e.total_salary;
+  `;
+
+  try {
+    const result = await pool.query(query, [employee_id]);
+    return { success: true, status: 200, data: result.rows[0] };
+  } catch (err) {
+    console.error("Error fetching ESS dashboard data:", err);
+    return {
+      success: false,
+      status: 500,
+      message: "Failed to fetch dashboard data for employee",
+    };
   }
 };
 
@@ -115,34 +152,32 @@ const handleLogin = async (req) => {
 
   try {
     const query = `
-      SELECT ess_password FROM employees 
+      SELECT employee_id, name, ess_password FROM employees 
       WHERE mail = $1 OR employee_id = $1
     `;
     const result = await pool.query(query, [identifier]);
 
     if (result.rows.length === 0) {
-      return res.json({ success: false, message: "Invalid credentials" });
+      return { success: false, message: "Invalid credentials" };
     }
 
-    if (result.rows.length === 0) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid credentials" });
+    const employee = result.rows[0];
+
+    if (password !== employee.ess_password) {
+      return { success: false, message: "Invalid credentials" };
     }
 
-    const storedPassword = result.rows[0].ess_password;
-
-    // Plain text comparison (no hashing)
-    if (password !== storedPassword) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid credentials" });
-    }
-
-    return { success: true, message: "Logged In Success" };
+    return {
+      success: true,
+      message: "Logged In Success",
+      employee: {
+        employee_id: employee.employee_id,
+        name: employee.name,
+      },
+    };
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return { success: false, message: "Server error" };
   }
 };
 
@@ -265,6 +300,20 @@ const getAllLeaves = async () => {
   }
 };
 
+const getEmployeeLeaves = async (req) => {
+  const { employee_id } = req.params;
+  try {
+    const result = await pool.query(
+      "SELECT * FROM leaves WHERE employee_id = $1",
+      [employee_id]
+    );
+    return result.rows;
+  } catch (error) {
+    console.error("Error fetching employees:", error);
+    return { status: 500, message: "Internal Server Error" };
+  }
+};
+
 const updateEmployeeData = async (req) => {
   const { employee_id } = req.params;
   const {
@@ -370,6 +419,32 @@ const getPayroll = async (req) => {
   }
 };
 
+const adminAuth = async (req) => {
+  const { identifier, password } = req.body;
+  try {
+    const result = await pool.query(
+      "SELECT * FROM admin_auth WHERE username = $1",
+      [identifier]
+    );
+
+    if (result.rows.length === 0) {
+      return { success: false, message: "User not found" };
+    }
+
+    const user = result.rows[0];
+    const match = user.password === password;
+
+    if (match) {
+      return { success: true, status: 200 };
+    } else {
+      return { success: false, message: "Invalid password", status: 404 };
+    }
+  } catch (err) {
+    console.error("Login error:", err);
+    return { success: false, message: "Server error", status: 500 };
+  }
+};
+
 module.exports = {
   getDashboardData,
   postEmployeeData,
@@ -385,4 +460,7 @@ module.exports = {
   getEmployee,
   updateEmployeeData,
   getPayroll,
+  getEssDashboard,
+  getEmployeeLeaves,
+  adminAuth,
 };
