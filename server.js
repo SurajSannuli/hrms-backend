@@ -27,9 +27,10 @@ const app = express();
 
 // Security Middleware
 app.use(helmet());
+const ALLOWED_ORIGIN = process.env.FRONTEND_URL || "http://localhost:3000";
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: ALLOWED_ORIGIN,
   })
 );
 app.use(express.json({ limit: "10kb" }));
@@ -271,9 +272,6 @@ app.get("/api/get-ess-leave/:employee_id", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -283,9 +281,10 @@ app.use((err, req, res, next) => {
 // Initialize database and start server
 initializeDatabase()
   .then(() => {
-    const PORT = process.env.PORT || 5000;
+    const PORT = process.env.PORT || 5001;
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
+      console.log(`CORS enabled for origin: ${ALLOWED_ORIGIN}`);
     });
   })
   .catch((err) => {
